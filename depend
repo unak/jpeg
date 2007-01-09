@@ -1,0 +1,2 @@
+test: all
+	$(RUBY) -I. -rjpeg $(srcdir)/test/test_jpeg.rb

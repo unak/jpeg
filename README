@@ -26,6 +26,8 @@ their paths by --with-jpeg-include and --with-jpeg-lib options.
 == Reference
 
 === module JPEG
+JPEG base module.
+
 ==== constants
 : JPEG::VERSION
   Version string of this library.
@@ -43,6 +45,11 @@ img must be a JPEG::Image object.
 io must be an IO object. It will be binmode'ed.
 
 === class JPEG::Image
+Class for image data.
+
+==== super class
+* Object
+
 ==== class methods
 --- JPEG::Image.new
 Create a JPEG::Image object.
@@ -96,6 +103,11 @@ It converts the image by using bilinear operation.
 width and height must be Integer objects. They must be more than 0.
 
 === class JPEG::Reader
+Class for reading JPEG file.
+
+==== super class
+* Object
+
 ==== class methods
 --- JPEG::Reader.new(io)
 --- JPEG::Reader.open(io)
@@ -128,6 +140,11 @@ Returns the width of the image.
 Returns the height of the image.
 
 === class JPEG::Writer
+Class for writing JPEG file.
+
+==== super class
+* Object
+
 ==== class methods
 --- JPEG::Writer.new(io, width, height, quality)
 --- JPEG::Writer.open(io, width, height, quality)
@@ -172,6 +189,28 @@ Returns the height of the image.
 
 --- JPEG::Writer#quality
 Returns the quality of the image.
+
+=== JPEG::InternalError
+errors in this library.
+
+==== super class
+* StandardError
+
+=== JPEG::JERR_*
+libjpeg errors.
+
+==== super class
+* JPEG::InternalError
+
+==== constants
+: Errno
+  libjpeg error code.
+
+=== JPEG::UnknownError
+libjpeg unknown error.
+
+==== super class
+* JPEG::InternalError
 
 
 == LEGAL Issue

@@ -17,12 +17,16 @@ File.open("test2.jpg", "wb") do |f|
 end
 
 File.open("test2.jpg", "rb") do |f|
-  JPEG::Reader.open(f) do |reader|
-    p [reader.width, reader.height]
-    reader.each do |line|
-      p line.size
-      break
+  begin
+    JPEG::Reader.open(f) do |reader|
+      p [reader.width, reader.height]
+      reader.each do |line|
+        p line.size
+        break
+      end
     end
+  rescue JPEG::JERR_TOO_LITTLE_DATA
+    # break in each makes this exception
   end
 end
 
@@ -33,6 +37,7 @@ File.open("test3.jpg", "wb") do |f|
     g = 0
     b = 0
     writer.write_each_line do
+      break
       line = ""
       320.times do
         line << r.chr << g.chr << b.chr

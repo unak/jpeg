@@ -41,9 +41,9 @@
 #define RSTRING_LEN(s) (RSTRING(s)->len)
 #endif
 
-
-#define MY_VERSION "0.1"
+#define MY_VERSION "0.2"
 #define SRCBITS 24
+
 
 #define define_accessor(klass, pref, val)	\
 static VALUE					\
@@ -65,16 +65,32 @@ pref##_set_##val(VALUE self, VALUE v)		\
 static VALUE mJpeg;
 static VALUE cImage;
 static VALUE eJpegError;
+static VALUE eJpegUnknownError;
 static VALUE cReader;
 static VALUE cWriter;
+
+static st_table *jp_err_tbl;
 
 
 static void
 jp_error_exit(j_common_ptr jcp)
 {
+    VALUE err;
+
     jpeg_abort(jcp);
-    if (jcp->err->msg_code != JERR_TOO_LITTLE_DATA) {
-	rb_raise(eJpegError, "jpeg error");
+    if (jcp->err->msg_code >= 0 &&
+	jcp->err->msg_code <= jcp->err->last_jpeg_message) {
+	if (!st_lookup(jp_err_tbl, jcp->err->msg_code, &err)) {
+	    err = eJpegUnknownError;
+	}
+	rb_raise(err, jcp->err->jpeg_message_table[jcp->err->msg_code],
+		 jcp->err->msg_parm.i[0], jcp->err->msg_parm.i[1],
+		 jcp->err->msg_parm.i[2], jcp->err->msg_parm.i[3],
+		 jcp->err->msg_parm.i[4], jcp->err->msg_parm.i[5],
+		 jcp->err->msg_parm.i[6], jcp->err->msg_parm.i[7]);
+    }
+    else {
+	rb_raise(eJpegUnknownError, "unknown internal error");
     }
 }
 
@@ -179,11 +195,11 @@ jp_s_write(VALUE klass, VALUE obj, VALUE dest)
     height = NUM2LONG(rb_iv_get(obj, "height"));
     quality = FIX2INT(rb_iv_get(obj, "quality"));
     if (width <= 0 || height <= 0 || quality <= 0 || quality > 100) {
-	rb_raise(eJpegError, "illegal internal paramter");
+	rb_raise(rb_eArgError, "illegal internal paramter");
     }
     raw_data = rb_iv_get(obj, "raw_data");
     if (RSTRING_LEN(raw_data) < width * 3 * height) {
-	rb_raise(eJpegError, "raw_data is smaller than width and height");
+	rb_raise(rb_eArgError, "raw_data is smaller than width and height");
     }
 
     cinfo.err = jpeg_std_error(&jerr);
@@ -596,7 +612,7 @@ wr_each(VALUE self)
 	VALUE line = rb_yield(Qundef);
 	StringValue(line);
 	if (RSTRING_LEN(line) < size) {
-	    rb_raise(eJpegError, "too short data passed");
+	    rb_raise(rb_eArgError, "too short data passed");
 	}
 	work = (JSAMPROW)RSTRING_PTR(line);
 	jpeg_write_scanlines(&wrp->cinfo, (JSAMPARRAY)&work , 1);
@@ -645,6 +661,18 @@ wr_get_quality(VALUE self)
     return INT2FIX(wrp->quality);
 }
 
+static VALUE
+set_jp_err(int n, const char *name)
+{
+    VALUE err;
+
+    err = rb_define_class_under(mJpeg, name, eJpegError);
+    rb_define_const(err, "Errno", INT2NUM(n));
+    st_add_direct(jp_err_tbl, n, err);
+
+    return err;
+}
+
 void
 Init_jpeg(void)
 {
@@ -683,5 +711,10 @@ Init_jpeg(void)
     rb_define_method(cWriter, "quality", wr_get_quality, 0);
 
     eJpegError =
-	rb_define_class_under(mJpeg, "InternalError", rb_eStandardError);
+	rb_define_class_under(mJpeg, "StandardError", rb_eStandardError);
+    jp_err_tbl = st_init_numtable();
+#define JMESSAGE(code,string)	set_jp_err(code, #code);
+#include "jerror.h"
+    eJpegUnknownError =
+	rb_define_class_under(mJpeg, "UnknownError", eJpegError);
 }

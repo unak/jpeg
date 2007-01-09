@@ -34,6 +34,13 @@
 #include <ruby.h>
 #include <rubyio.h>
 
+#ifndef RSTRING_PTR
+#define RSTRING_PTR(s) (RSTRING(s)->ptr)
+#endif
+#ifndef RSTRING_LEN
+#define RSTRING_LEN(s) (RSTRING(s)->len)
+#endif
+
 
 #define MY_VERSION "0.1"
 #define SRCBITS 24

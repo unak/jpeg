@@ -19,11 +19,11 @@ p [src.width, src.height, src.raw_data.size]
 dest = src.bilinear(src.width / 3, src.height / 3)
 p [dest.width, dest.height, dest.raw_data.size]
 dest.quality = 50
-File.open(File.join(dir, "test2.jpg"), "wb") do |f|
+File.open("test2.jpg", "wb") do |f|
   JPEG.write(dest, f)
 end
 
-File.open(File.join(dir, "test2.jpg"), "rb") do |f|
+File.open("test2.jpg", "rb") do |f|
   JPEG::Reader.open(f) do |reader|
     p [reader.width, reader.height]
     reader.each do |line|
@@ -33,7 +33,7 @@ File.open(File.join(dir, "test2.jpg"), "rb") do |f|
   end
 end
 
-File.open(File.join(dir, "test3.jpg"), "wb") do |f|
+File.open("test3.jpg", "wb") do |f|
   JPEG::Writer.open(f, 320, 240, 50) do |writer|
     p [writer.width, writer.height, writer.quality]
     r = 0

@@ -1,14 +1,7 @@
 require "jpeg"
-
 dir = File.dirname(__FILE__)
 
-unless String.new.respond_to?(:ord)
-  class Integer
-    def ord
-      self
-    end
-  end
-end
+p JPEG::VERSION
 
 src = nil
 File.open(File.join(dir, "test.jpg"), "rb") do |f|

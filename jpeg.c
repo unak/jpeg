@@ -33,6 +33,7 @@
 #undef EXTERN
 #include <ruby.h>
 #include <rubyio.h>
+#include <st.h>
 
 #ifndef RSTRING_PTR
 #define RSTRING_PTR(s) (RSTRING(s)->ptr)

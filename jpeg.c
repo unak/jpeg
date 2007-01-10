@@ -42,7 +42,7 @@
 #define RSTRING_LEN(s) (RSTRING(s)->len)
 #endif
 
-#define MY_VERSION "0.2"
+#define MY_VERSION "0.3"
 #define SRCBITS 24
 
 

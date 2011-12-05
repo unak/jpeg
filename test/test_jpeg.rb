@@ -1,27 +1,41 @@
 require "jpeg"
 dir = File.dirname(__FILE__)
 
-p JPEG::VERSION
+puts "jpeg.so version = #{JPEG::VERSION}"
 
 src = nil
 File.open(File.join(dir, "test.jpg"), "rb") do |f|
   src = JPEG.read(f)
 end
-p [src.width, src.height, src.raw_data.size]
+puts "source   : %d x %d, %d bytes" % [src.width, src.height, src.raw_data.size]
 
 dest = src.bilinear(src.width / 3, src.height / 3)
-p [dest.width, dest.height, dest.raw_data.size]
-dest.quality = 50
+puts "bilinear : %d x %d, %d bytes (test2.jpg)" % [dest.width, dest.height, dest.raw_data.size]
+dest.quality = 100
 File.open("test2.jpg", "wb") do |f|
+  JPEG.write(dest, f)
+end
+
+dest = src.bicubic(src.width / 3, src.height / 3)
+puts "bicubic  : %d x %d, %d bytes (test3.jpg)" % [dest.width, dest.height, dest.raw_data.size]
+dest.quality = 100
+File.open("test3.jpg", "wb") do |f|
+  JPEG.write(dest, f)
+end
+
+dest = src.average(src.width / 3, src.height / 3)
+puts "average  : %d x %d, %d bytes (test4.jpg)" % [dest.width, dest.height, dest.raw_data.size]
+dest.quality = 100
+File.open("test4.jpg", "wb") do |f|
   JPEG.write(dest, f)
 end
 
 File.open("test2.jpg", "rb") do |f|
   begin
     JPEG::Reader.open(f) do |reader|
-      p [reader.width, reader.height]
+      puts "test2.jpg: %d x %d" % [reader.width, reader.height]
       reader.each do |line|
-        p line.size
+        puts "  line size = #{line.size} (total = #{line.size * reader.height})"
         break
       end
     end
@@ -30,14 +44,13 @@ File.open("test2.jpg", "rb") do |f|
   end
 end
 
-File.open("test3.jpg", "wb") do |f|
+File.open("test5.jpg", "wb") do |f|
   JPEG::Writer.open(f, 320, 240, 50) do |writer|
-    p [writer.width, writer.height, writer.quality]
+    puts "test5.jpg: %d x %d (%d)" % [writer.width, writer.height, writer.quality]
     r = 0
     g = 0
     b = 0
     writer.write_each_line do
-      break
       line = ""
       320.times do
         line << r.chr << g.chr << b.chr

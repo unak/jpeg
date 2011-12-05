@@ -25,21 +25,28 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <stdio.h>
-#include <jpeglib.h>
-#include <jerror.h>
-#undef HAVE_PROTOTYPES
-#undef HAVE_STDLIB_H
-#undef EXTERN
 #include <ruby.h>
 #include <rubyio.h>
 #include <st.h>
+
+#include <stdio.h>
+
+#undef HAVE_PROTOTYPES
+#undef HAVE_STDDEF_H
+#undef HAVE_STDLIB_H
+#undef EXTERN
+#include <jpeglib.h>
+#include <jerror.h>
 
 #ifndef RSTRING_PTR
 #define RSTRING_PTR(s) (RSTRING(s)->ptr)
 #endif
 #ifndef RSTRING_LEN
 #define RSTRING_LEN(s) (RSTRING(s)->len)
+#endif
+
+#if HAVE_RB_IO_T
+#define OpenFile rb_io_t
 #endif
 
 #define MY_VERSION "0.3"
@@ -234,11 +241,11 @@ jp_s_write(VALUE klass, VALUE obj, VALUE dest)
 }
 
 static void
-get_point(char *ptr, long width, double x, double y, int *r, int *g, int *b)
+get_point_bilinear(unsigned char *ptr, long width, long height, double x, double y, int *r, int *g, int *b)
 {
     long x1, y1;
     double dx, dy;
-    char c0[3], c1[3], c2[3], c3[3];
+    unsigned char c0[3], c1[3], c2[3], c3[3];
 
     x1 = (long)x;
     y1 = (long)y;
@@ -261,13 +268,78 @@ get_point(char *ptr, long width, double x, double y, int *r, int *g, int *b)
     c3[1] = ptr[(x1 + 1) * 3 + (y1 + 1) * 3 * width + 1];
     c3[2] = ptr[(x1 + 1) * 3 + (y1 + 1) * 3 * width + 2];
 
-    *r = dx * dy * (c0[0] - c1[0] - c2[0] + c3[0]) + dx * (c1[0] - c0[0]) + dy * (c2[0] - c0[0]) + c0[0];
-    *g = dx * dy * (c0[1] - c1[1] - c2[1] + c3[1]) + dx * (c1[1] - c0[1]) + dy * (c2[1] - c0[1]) + c0[1];
-    *b = dx * dy * (c0[2] - c1[2] - c2[2] + c3[2]) + dx * (c1[2] - c0[2]) + dy * (c2[2] - c0[2]) + c0[2];
+    *r = (int)(dx * dy * (c0[0] - c1[0] - c2[0] + c3[0]) + dx * (c1[0] - c0[0]) + dy * (c2[0] - c0[0]) + c0[0]);
+    *g = (int)(dx * dy * (c0[1] - c1[1] - c2[1] + c3[1]) + dx * (c1[1] - c0[1]) + dy * (c2[1] - c0[1]) + c0[1]);
+    *b = (int)(dx * dy * (c0[2] - c1[2] - c2[2] + c3[2]) + dx * (c1[2] - c0[2]) + dy * (c2[2] - c0[2]) + c0[2]);
 }
 
+static inline double
+bicubic_weight(double d)
+{
+    double d2 = d * d;
+    double d3 = d2 * d;
+    return d < 1.0 ? (1.0 - 2.0 * d2 + d3) : d < 2.0 ? (4.0 - 8.0 * d + 5.0 * d2 - d3) : 0.0;
+}
+
+static inline int
+saturate(int n, int min, int max)
+{
+    return n < min ? min : n > max ? max : n;
+}
+
+static void
+get_point_bicubic(unsigned char *ptr, long width, long height, double dx, double dy, int *pr, int *pg, int *pb)
+{
+    long x[4], y[4];
+    double wx[4], wy[4], wt;
+    double r, g, b;
+    int i, j, k;
+
+    x[1] = (long)dx;
+    x[0] = x[1] - 1;
+    x[2] = x[1] + 1;
+    x[3] = x[2] + 1;
+
+    y[1] = (long)dy;
+    y[0] = y[1] - 1;
+    y[2] = y[1] + 1;
+    y[3] = y[2] + 1;
+
+    wx[0] = bicubic_weight(dx - x[0]);
+    wx[1] = bicubic_weight(dx - x[1]);
+    wx[2] = bicubic_weight(x[2] - dx);
+    wx[3] = bicubic_weight(x[3] - dx);
+    wy[0] = bicubic_weight(dy - y[0]);
+    wy[1] = bicubic_weight(dy - y[1]);
+    wy[2] = bicubic_weight(y[2] - dy);
+    wy[3] = bicubic_weight(y[3] - dy);
+
+    r = g = b = 0.0;
+    wt = 0.0;
+    for (j = 0; j < 4; ++j) {
+	if (y[j] >= 0 && y[j] < height) {
+	    for (i = 0; i < 4; ++i) {
+		if (x[i] >= 0 && x[i] < width) {
+		    double w = wx[i] * wy[j];
+		    int pos = x[i] * 3 + y[j] * 3 * width;
+		    r += ptr[pos + 0] * w;
+		    g += ptr[pos + 1] * w;
+		    b += ptr[pos + 2] * w;
+		    wt += w;
+		}
+	    }
+	}
+    }
+
+    *pr = saturate((int)(r / wt), 0, 255);
+    *pg = saturate((int)(g / wt), 0, 255);
+    *pb = saturate((int)(b / wt), 0, 255);
+}
+
+typedef void (* get_point_t)(unsigned char *, long, long, double, double, int *, int *, int *);
+
 static VALUE
-im_bilinear(VALUE self, VALUE dwidth, VALUE dheight)
+im_resize(get_point_t get_point, VALUE self, VALUE dwidth, VALUE dheight)
 {
     long width, height;
     long dw, dh;
@@ -288,10 +360,10 @@ im_bilinear(VALUE self, VALUE dwidth, VALUE dheight)
     rb_str_resize(dest, dw * dh * 3);
     bx = (double)width / dw;
     by = (double)height / dh;
-    for (y1 = y2 = 0; y1 < dh; y1++) {
-	for (x1 = x2 = 0; x1 < dw; x1++) {
+    for (y1 = 0, y2 = 0.0; y1 < dh; y1++) {
+	for (x1 = 0, x2 = 0.0; x1 < dw; x1++) {
 	    int r, g, b;
-	    get_point(RSTRING_PTR(src), width, x2, y2, &r, &g, &b);
+	    get_point((unsigned char *)RSTRING_PTR(src), width, height, x2, y2, &r, &g, &b);
 	    RSTRING_PTR(dest)[x1 * 3 + y1 * dw * 3 + 0] = r;
 	    RSTRING_PTR(dest)[x1 * 3 + y1 * dw * 3 + 1] = g;
 	    RSTRING_PTR(dest)[x1 * 3 + y1 * dw * 3 + 2] = b;
@@ -307,6 +379,18 @@ im_bilinear(VALUE self, VALUE dwidth, VALUE dheight)
     rb_iv_set(jpeg, "quality", INT2FIX(100));
 
     return jpeg;
+}
+
+static VALUE
+im_bilinear(VALUE self, VALUE dwidth, VALUE dheight)
+{
+    return im_resize(get_point_bilinear, self, dwidth, dheight);
+}
+
+static VALUE
+im_bicubic(VALUE self, VALUE dwidth, VALUE dheight)
+{
+    return im_resize(get_point_bicubic, self, dwidth, dheight);
 }
 
 define_accessor(cImage, im, raw_data);
@@ -685,6 +769,7 @@ Init_jpeg(void)
     cImage = rb_define_class_under(mJpeg, "Image", rb_cObject);
     rb_define_method(cImage, "initialize", im_initialize, 0);
     rb_define_method(cImage, "bilinear", im_bilinear, 2);
+    rb_define_method(cImage, "bicubic", im_bicubic, 2);
     register_accessor(cImage, im, raw_data);
     register_accessor(cImage, im, width);
     register_accessor(cImage, im, height);

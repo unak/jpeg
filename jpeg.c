@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007  NAKAMURA Usaku <usa@garbagecollect.jp>
+ * Copyright (c) 2007,2011  NAKAMURA Usaku <usa@garbagecollect.jp>
  * All rights reserved.
  * 
  * Redistribution and use in source and binary forms, with or without
@@ -49,7 +49,7 @@
 #define OpenFile rb_io_t
 #endif
 
-#define MY_VERSION "0.3"
+#define MY_VERSION "0.4"
 
 
 #define define_accessor(klass, pref, val)	\

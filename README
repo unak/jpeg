@@ -38,11 +38,13 @@ Read JPEG file from io and returns JPEG::Image object.
 
 io must be an IO object. It will be binmode'ed.
 
---- JPEG.write(img, io)
+--- JPEG.write(img, io, gray = false)
 Write img as JPEG file to io.
 
 img must be a JPEG::Image object.
 io must be an IO object. It will be binmode'ed.
+gray must be a true value or a false value. If gray is a true value,
+the written JPEG file will be grayscale image.
 
 === class JPEG::Image
 Class for image data.
@@ -82,6 +84,8 @@ equal to 100.
 
 --- JPEG::Image#raw_data
 Returns the raw RGB data of the image.
+Even if the object is created from grayscale image, the data image is
+RGB data (automatically converted).
 
 The returned value is a String object.
 1 pixel is 3 bytes -- 1st byte means red, 2nd byte means green, and 3rd byte
@@ -99,6 +103,12 @@ size. You can calculate that the size is width * 3 * height.
 --- JPEG::bilinear(width, height)
 Create and returns a new JPEG::Image object by converting the size of the image.
 It converts the image by using bilinear operation.
+
+width and height must be Integer objects. They must be more than 0.
+
+--- JPEG::bicubic(width, height)
+Create and returns a new JPEG::Image object by converting the size of the image.
+It converts the image by using bicubic operation.
 
 width and height must be Integer objects. They must be more than 0.
 
@@ -146,8 +156,8 @@ Class for writing JPEG file.
 * Object
 
 ==== class methods
---- JPEG::Writer.new(io, width, height, quality)
---- JPEG::Writer.open(io, width, height, quality)
+--- JPEG::Writer.new(io, width, height, quality, gray = false)
+--- JPEG::Writer.open(io, width, height, quality, gray = false)
 Create and returns a JPEG::Writer object.
 The object will write a JPEG file to io.
 
@@ -156,8 +166,10 @@ width must be an Integer object. It must be more than 0.
 height must be an Integer object. It must be more than 0.
 quality must be an Integer object. It must be more than 0 and less than or 
 equal to 100.
+gray must be a true value or a false value. If gray is a true value,
+the written JPEG file will be grayscale image.
 
---- JPEG::Writer.open(io) {|writer| ... }
+--- JPEG::Writer.open(io, width, height, quary, gray = false) {|writer| ... }
 Create a JPEG::Writer object and will pass it to the given block.
 The object will write a JPEG file to io.
 
@@ -166,6 +178,8 @@ width must be an Integer object. It must be more than 0.
 height must be an Integer object. It must be more than 0.
 quality must be an Integer object. It must be more than 0 and less than or 
 equal to 100.
+gray must be a true value or a false value. If gray is a true value,
+the written JPEG file will be grayscale image.
 
 After executing the block, it returns nil.
 
@@ -178,8 +192,9 @@ You can never use this object to write data.
 Write the return value of the block as the raw RGB data of each lines to
 the JPEG file.
 The return value must be a String object. 
-1 pixel is 3 bytes -- 1st byte means red, 2nd byte means green, and 3rd byte
-means blue.
+If self is created for grayscale image, 1 pixel is 1 byte -- grayscale.
+Otherwise, 1 pixel is 3 bytes -- 1st byte means red, 2nd byte means green,
+and 3rd byte means blue.
 
 --- JPEG::Writer#width
 Returns the width of the image.
@@ -215,7 +230,7 @@ libjpeg unknown error.
 
 == LEGAL Issue
 
-Copyright (c) 2007  NAKAMURA Usaku <usa@garbagecollect.jp>
+Copyright (c) 2007,2011  NAKAMURA Usaku <usa@garbagecollect.jp>
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without

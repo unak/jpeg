@@ -16,16 +16,6 @@ File.open("test2.jpg", "wb") do |f|
   JPEG.write(dest, f)
 end
 
-dest = src.bicubic(src.width / 3, src.height / 3)
-puts "bicubic  : %d x %d, %d bytes (test3.jpg)" % [dest.width, dest.height, dest.raw_data.size]
-dest.quality = 100
-File.open("test3.jpg", "wb") do |f|
-  JPEG.write(dest, f)
-end
-File.open("test4.jpg", "wb") do |f|
-  JPEG.write(dest, f, true)
-end
-
 File.open("test2.jpg", "rb") do |f|
   begin
     JPEG::Reader.open(f) do |reader|
@@ -40,9 +30,28 @@ File.open("test2.jpg", "rb") do |f|
   end
 end
 
+dest = src.bicubic(src.width / 3, src.height / 3)
+puts "bicubic  : %d x %d, %d bytes (test3.jpg)" % [dest.width, dest.height, dest.raw_data.size]
+dest.quality = 100
+File.open("test3.jpg", "wb") do |f|
+  JPEG.write(dest, f)
+end
+File.open("test4.jpg", "wb") do |f|
+  JPEG.write(dest, f, true)
+  puts "test4.jpg: grayscale image"
+end
+
+File.open("test4.jpg", "rb") do |f|
+  src = JPEG.read(f)
+end
 File.open("test5.jpg", "wb") do |f|
+  JPEG.write(src, f)
+  puts "test5.jpg: fullcolor but grayed image"
+end
+
+File.open("test6.jpg", "wb") do |f|
   JPEG::Writer.open(f, 320, 240, 50) do |writer|
-    puts "test5.jpg: %d x %d (%d)" % [writer.width, writer.height, writer.quality]
+    puts "test6.jpg: %d x %d (%d)" % [writer.width, writer.height, writer.quality]
     r = 0
     g = 0
     b = 0
@@ -68,9 +77,9 @@ File.open("test5.jpg", "wb") do |f|
   end
 end
 
-File.open("test6.jpg", "wb") do |f|
+File.open("test7.jpg", "wb") do |f|
   JPEG::Writer.open(f, 320, 240, 50, true) do |writer|
-    puts "test6.jpg: %d x %d (%d)" % [writer.width, writer.height, writer.quality]
+    puts "test7.jpg: %d x %d (%d)" % [writer.width, writer.height, writer.quality]
     scale = 0
     writer.write_each_line do
       line = ""

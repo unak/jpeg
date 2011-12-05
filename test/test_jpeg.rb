@@ -22,12 +22,8 @@ dest.quality = 100
 File.open("test3.jpg", "wb") do |f|
   JPEG.write(dest, f)
 end
-
-dest = src.average(src.width / 3, src.height / 3)
-puts "average  : %d x %d, %d bytes (test4.jpg)" % [dest.width, dest.height, dest.raw_data.size]
-dest.quality = 100
 File.open("test4.jpg", "wb") do |f|
-  JPEG.write(dest, f)
+  JPEG.write(dest, f, true)
 end
 
 File.open("test2.jpg", "rb") do |f|
@@ -66,6 +62,22 @@ File.open("test5.jpg", "wb") do |f|
             end
           end
         end
+      end
+      line
+    end
+  end
+end
+
+File.open("test6.jpg", "wb") do |f|
+  JPEG::Writer.open(f, 320, 240, 50, true) do |writer|
+    puts "test6.jpg: %d x %d (%d)" % [writer.width, writer.height, writer.quality]
+    scale = 0
+    writer.write_each_line do
+      line = ""
+      320.times do
+        line << scale.chr
+        scale += 1;
+        scale = 0 if scale > 255
       end
       line
     end

@@ -50,7 +50,6 @@
 #endif
 
 #define MY_VERSION "0.3"
-#define SRCBITS 24
 
 
 #define define_accessor(klass, pref, val)	\
@@ -155,7 +154,7 @@ jp_s_read(VALUE klass, VALUE src)
     dinfo.output_components = 3;
     dinfo.out_color_space = JCS_RGB;
     jpeg_start_decompress(&dinfo);
-    size = dinfo.image_width * SRCBITS / 8;
+    size = dinfo.image_width * dinfo.output_components;
     len = size * dinfo.image_height;
     raw_data = rb_iv_get(obj, "raw_data");
     rb_str_resize(raw_data, len);
@@ -173,18 +172,21 @@ jp_s_read(VALUE klass, VALUE src)
 }
 
 static VALUE
-jp_s_write(VALUE klass, VALUE obj, VALUE dest)
+jp_s_write(int argc, VALUE *argv, VALUE klass)
 {
+    VALUE obj, dest, gray = Qfalse;
     struct jpeg_compress_struct cinfo;
     struct jpeg_error_mgr jerr;
     FILE *fp;
     long size;
     long offset;
     char *line;
-    VALUE raw_data;
+    VALUE raw_data, buffer;
     long width, height;
     int quality;
+    JSAMPROW work;
 
+    rb_scan_args(argc, argv, "21", &obj, &dest, &gray);
     if (TYPE(dest) == T_FILE) {
 	OpenFile *fptr;
 	rb_io_binmode(dest);
@@ -203,7 +205,7 @@ jp_s_write(VALUE klass, VALUE obj, VALUE dest)
     height = NUM2LONG(rb_iv_get(obj, "height"));
     quality = FIX2INT(rb_iv_get(obj, "quality"));
     if (width <= 0 || height <= 0 || quality <= 0 || quality > 100) {
-	rb_raise(rb_eArgError, "illegal internal paramter");
+	rb_raise(rb_eArgError, "invalid internal paramter");
     }
     raw_data = rb_iv_get(obj, "raw_data");
     if (RSTRING_LEN(raw_data) < width * 3 * height) {
@@ -217,8 +219,17 @@ jp_s_write(VALUE klass, VALUE obj, VALUE dest)
 
     cinfo.image_width = width;
     cinfo.image_height = height;
-    cinfo.input_components = 3;
-    cinfo.in_color_space = JCS_RGB;
+    if (RTEST(gray)) {
+	cinfo.input_components = 1;
+	cinfo.in_color_space = JCS_GRAYSCALE;
+	buffer = rb_str_new(NULL, 0);
+	rb_str_resize(buffer, width);
+	work = (JSAMPROW)RSTRING_PTR(buffer);
+    }
+    else {
+	cinfo.input_components = 3;
+	cinfo.in_color_space = JCS_RGB;
+    }
     cinfo.progressive_mode = 1;
     jpeg_set_defaults(&cinfo);
     jpeg_set_quality(&cinfo, quality, 0);
@@ -226,10 +237,21 @@ jp_s_write(VALUE klass, VALUE obj, VALUE dest)
     cinfo.dct_method = JDCT_ISLOW;
     jpeg_start_compress(&cinfo, 1);
 
-    size = width * SRCBITS / 8;
+    size = width * 3;	/* fixed value because source data is always 24bits */
     offset = 0;
     while (cinfo.next_scanline < height) {
-	JSAMPROW work = (JSAMPROW)&RSTRING_PTR(raw_data)[offset];
+	if (RTEST(gray)) {
+	    unsigned char *src = (unsigned char *)&RSTRING_PTR(raw_data)[offset];
+	    unsigned char *dst = (unsigned char *)RSTRING_PTR(buffer);
+	    int x;
+	    for (x = 0; x < width; ++x) {
+		*dst++ = ((unsigned long)*(src + 0) + *(src + 1) + *(src + 2)) / 3;
+		src += 3;
+	    }
+	}
+	else {
+	    work = (JSAMPROW)&RSTRING_PTR(raw_data)[offset];
+	}
 	jpeg_write_scanlines(&cinfo, (JSAMPARRAY)&work , 1);
 	offset += size;
     }
@@ -363,7 +385,7 @@ im_resize(get_point_t get_point, VALUE self, VALUE dwidth, VALUE dheight)
     for (y1 = 0, y2 = 0.0; y1 < dh; y1++) {
 	for (x1 = 0, x2 = 0.0; x1 < dw; x1++) {
 	    int r, g, b;
-	    get_point((unsigned char *)RSTRING_PTR(src), width, height, x2, y2, &r, &g, &b);
+	    get_point(RSTRING_PTR(src), width, height, x2, y2, &r, &g, &b);
 	    RSTRING_PTR(dest)[x1 * 3 + y1 * dw * 3 + 0] = r;
 	    RSTRING_PTR(dest)[x1 * 3 + y1 * dw * 3 + 1] = g;
 	    RSTRING_PTR(dest)[x1 * 3 + y1 * dw * 3 + 2] = b;
@@ -517,7 +539,7 @@ rd_each(VALUE self)
 	rb_raise(eJpegError, "not opened");
     }
 
-    size = rdp->dinfo.image_width * SRCBITS / 8;
+    size = rdp->dinfo.image_width * rdp->dinfo.output_components;
     buf = ALLOCA_N(char, size);
     while (rdp->dinfo.output_scanline < rdp->dinfo.image_height) {
 	JSAMPROW work = (JSAMPROW)buf;
@@ -624,11 +646,11 @@ static VALUE
 wr_initialize(int argc, VALUE *argv, VALUE self)
 {
     VALUE dest;
-    VALUE width, height, quality;
+    VALUE width, height, quality, gray = Qfalse;
     struct writer_st *wrp;
     FILE *fp;
 
-    rb_scan_args(argc, argv, "40", &dest, &width, &height, &quality);
+    rb_scan_args(argc, argv, "41", &dest, &width, &height, &quality, &gray);
     if (TYPE(dest) == T_FILE) {
 	OpenFile *fptr;
 	rb_io_binmode(dest);
@@ -667,8 +689,14 @@ wr_initialize(int argc, VALUE *argv, VALUE self)
 
     wrp->cinfo.image_width = wrp->width;
     wrp->cinfo.image_height = wrp->height;
-    wrp->cinfo.input_components = 3;
-    wrp->cinfo.in_color_space = JCS_RGB;
+    if (RTEST(gray)) {
+	wrp->cinfo.input_components = 1;
+	wrp->cinfo.in_color_space = JCS_GRAYSCALE;
+    }
+    else {
+	wrp->cinfo.input_components = 3;
+	wrp->cinfo.in_color_space = JCS_RGB;
+    }
     wrp->cinfo.progressive_mode = 1;
     jpeg_set_defaults(&wrp->cinfo);
     jpeg_set_quality(&wrp->cinfo, wrp->quality, 0);
@@ -691,7 +719,7 @@ wr_each(VALUE self)
 	rb_raise(eJpegError, "not opened");
     }
 
-    size = wrp->cinfo.image_width * SRCBITS / 8;
+    size = wrp->cinfo.image_width * wrp->cinfo.input_components;
     while (wrp->cinfo.next_scanline < wrp->cinfo.image_height) {
 	JSAMPROW work;
 	VALUE line = rb_yield(Qundef);
@@ -764,7 +792,7 @@ Init_jpeg(void)
     mJpeg = rb_define_module("JPEG");
     rb_define_const(mJpeg, "VERSION", rb_str_new2(MY_VERSION));
     rb_define_singleton_method(mJpeg, "read", jp_s_read, 1);
-    rb_define_singleton_method(mJpeg, "write", jp_s_write, 2);
+    rb_define_singleton_method(mJpeg, "write", jp_s_write, -1);
 
     cImage = rb_define_class_under(mJpeg, "Image", rb_cObject);
     rb_define_method(cImage, "initialize", im_initialize, 0);

@@ -171,6 +171,12 @@ jp_s_read(VALUE klass, VALUE src)
     return obj;
 }
 
+static inline unsigned char
+grayscale(unsigned char r, unsigned char g, unsigned char b)
+{
+    return (unsigned char)((r * 77 + g * 150 + b * 29) >> 8);
+}
+
 static VALUE
 jp_s_write(int argc, VALUE *argv, VALUE klass)
 {
@@ -245,7 +251,7 @@ jp_s_write(int argc, VALUE *argv, VALUE klass)
 	    unsigned char *dst = (unsigned char *)RSTRING_PTR(buffer);
 	    int x;
 	    for (x = 0; x < width; ++x) {
-		*dst++ = ((unsigned long)*(src + 0) + *(src + 1) + *(src + 2)) / 3;
+		*dst++ = grayscale(*(src + 0), *(src + 1), *(src + 2));
 		src += 3;
 	    }
 	}

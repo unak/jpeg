@@ -36,24 +36,30 @@ dest.quality = 100
 File.open("test3.jpg", "wb") do |f|
   JPEG.write(dest, f)
 end
-File.open("test4.jpg", "wb") do |f|
-  JPEG.write(dest, f, true)
-  puts "test4.jpg: creating grayscale image"
-end
 
 dest = src.auto_contrast.bicubic(src.width / 3, src.height / 3)
-File.open("test5.jpg", "wb") do |f|
+dest.quality = 100
+File.open("test4.jpg", "wb") do |f|
   JPEG.write(dest, f)
-  puts "test5.jpg: auto contrasted image"
+  puts "test4.jpg: auto contrasted image"
 end
 
-File.open("test4.jpg", "rb") do |f|
-  src = JPEG.read(f)
-  puts "         : %d x %d, %d bytes (%sgray)" % [src.width, src.height, src.raw_data.size, src.gray?? "" : "not "]
+gray = src.grayscale.bilinear(src.width / 3, src.height / 3)
+gray.quality = 100
+File.open("test5.jpg", "wb") do |f|
+  JPEG.write(gray, f)
+  puts "test5.jpg: grayscaled image"
 end
+File.open("test5.jpg", "rb") do |f|
+  src2 = JPEG.read(f)
+  puts "         : %d x %d, %d bytes (%sgray)" % [src2.width, src2.height, src2.raw_data.size, src2.gray?? "" : "not "]
+end
+
+dest = src.grayscale.auto_contrast.bilinear(src.width / 3, src.height / 3)
+dest.quality = 100
 File.open("test6.jpg", "wb") do |f|
-  JPEG.write(src, f)
-  puts "test6.jpg: fullcolor but grayed image"
+  JPEG.write(dest, f)
+  puts "test6.jpg: grayed and auto contrasted image"
 end
 
 File.open("test7.jpg", "wb") do |f|
@@ -110,18 +116,37 @@ File.open(File.join(dir, "test.jpg"), "rb") do |f|
 end
 width = src.width / 3
 height = src.height / 3
+gray = src.grayscale
 
 TRY = 20
 Benchmark.bm do |bm|
-  bm.report("bilinear:") do
+  bm.report("bilinear(color):") do
     TRY.times do
       src.bilinear(width, height)
     end
   end
 
-  bm.report("bicubic :") do
+  bm.report("bicubic (color):") do
     TRY.times do
       src.bicubic(width, height)
+    end
+  end
+
+  bm.report("bilinear(gray) :") do
+    TRY.times do
+      gray.bilinear(width, height)
+    end
+  end
+
+  bm.report("bicubic (gray) :") do
+    TRY.times do
+      gray.bicubic(width, height)
+    end
+  end
+
+  bm.report("gray special   :") do
+    TRY.times do
+      gray.auto_contrast.bilinear(width, height)
     end
   end
 end

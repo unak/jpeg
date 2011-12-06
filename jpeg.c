@@ -153,8 +153,13 @@ jp_s_read(VALUE klass, VALUE src)
     rb_iv_set(obj, "quality", INT2FIX(100));	/* always 100 */
     rb_iv_set(obj, "gray_p", dinfo.out_color_space == JCS_GRAYSCALE ? Qtrue : Qfalse);
 
-    dinfo.output_components = 3;
-    dinfo.out_color_space = JCS_RGB;
+    if (dinfo.out_color_space == JCS_GRAYSCALE) {
+	dinfo.output_components = 1;
+    }
+    else {
+	dinfo.output_components = 3;
+	dinfo.out_color_space = JCS_RGB;
+    }
     jpeg_start_decompress(&dinfo);
     size = dinfo.image_width * dinfo.output_components;
     len = size * dinfo.image_height;
@@ -180,9 +185,9 @@ grayscale(unsigned char r, unsigned char g, unsigned char b)
 }
 
 static VALUE
-jp_s_write(int argc, VALUE *argv, VALUE klass)
+jp_s_write(VALUE klass, VALUE obj, VALUE dest)
 {
-    VALUE obj, dest, gray = Qfalse;
+    VALUE gray;
     struct jpeg_compress_struct cinfo;
     struct jpeg_error_mgr jerr;
     FILE *fp;
@@ -194,7 +199,6 @@ jp_s_write(int argc, VALUE *argv, VALUE klass)
     int quality;
     JSAMPROW work;
 
-    rb_scan_args(argc, argv, "21", &obj, &dest, &gray);
     if (TYPE(dest) == T_FILE) {
 	OpenFile *fptr;
 	rb_io_binmode(dest);
@@ -212,11 +216,12 @@ jp_s_write(int argc, VALUE *argv, VALUE klass)
     width = NUM2LONG(rb_iv_get(obj, "width"));
     height = NUM2LONG(rb_iv_get(obj, "height"));
     quality = FIX2INT(rb_iv_get(obj, "quality"));
+    gray = rb_iv_get(obj, "gray_p");
     if (width <= 0 || height <= 0 || quality <= 0 || quality > 100) {
 	rb_raise(rb_eArgError, "invalid internal paramter");
     }
     raw_data = rb_iv_get(obj, "raw_data");
-    if (RSTRING_LEN(raw_data) < width * 3 * height) {
+    if (RSTRING_LEN(raw_data) < width * height * (RTEST(gray) ? 1 : 3)) {
 	rb_raise(rb_eArgError, "raw_data is smaller than width and height");
     }
 
@@ -230,9 +235,6 @@ jp_s_write(int argc, VALUE *argv, VALUE klass)
     if (RTEST(gray)) {
 	cinfo.input_components = 1;
 	cinfo.in_color_space = JCS_GRAYSCALE;
-	buffer = rb_str_new(NULL, 0);
-	rb_str_resize(buffer, width);
-	work = (JSAMPROW)RSTRING_PTR(buffer);
     }
     else {
 	cinfo.input_components = 3;
@@ -245,21 +247,10 @@ jp_s_write(int argc, VALUE *argv, VALUE klass)
     cinfo.dct_method = JDCT_ISLOW;
     jpeg_start_compress(&cinfo, 1);
 
-    size = width * 3;	/* fixed value because source data is always 24bits */
+    size = width * cinfo.input_components;
     offset = 0;
     while (cinfo.next_scanline < height) {
-	if (RTEST(gray)) {
-	    unsigned char *src = (unsigned char *)&RSTRING_PTR(raw_data)[offset];
-	    unsigned char *dst = (unsigned char *)RSTRING_PTR(buffer);
-	    int x;
-	    for (x = 0; x < width; ++x) {
-		*dst++ = grayscale(*(src + 0), *(src + 1), *(src + 2));
-		src += 3;
-	    }
-	}
-	else {
-	    work = (JSAMPROW)&RSTRING_PTR(raw_data)[offset];
-	}
+	work = (JSAMPROW)&RSTRING_PTR(raw_data)[offset];
 	jpeg_write_scanlines(&cinfo, (JSAMPARRAY)&work , 1);
 	offset += size;
     }
@@ -271,36 +262,30 @@ jp_s_write(int argc, VALUE *argv, VALUE klass)
 }
 
 static void
-get_point_bilinear(unsigned char *ptr, long width, long height, double x, double y, int *r, int *g, int *b)
+get_point_bilinear(unsigned char *ptr, long width, long height, int components, double x, double y, int *r, int *g, int *b)
 {
     long x1, y1;
     double dx, dy;
-    unsigned char c0[3], c1[3], c2[3], c3[3];
+    unsigned char c[3][4];
+    int i;
 
     x1 = (long)x;
     y1 = (long)y;
     dx = x - x1;
     dy = y - y1;
 
-    c0[0] = ptr[(x1 + 0) * 3 + (y1 + 0) * 3 * width + 0];
-    c0[1] = ptr[(x1 + 0) * 3 + (y1 + 0) * 3 * width + 1];
-    c0[2] = ptr[(x1 + 0) * 3 + (y1 + 0) * 3 * width + 2];
+    for (i = 0; i < components; ++i) {
+	c[0][i] = ptr[((x1 + 0) + (y1 + 0) * width) * components + i];
+	c[1][i] = ptr[((x1 + 1) + (y1 + 0) * width) * components + i];
+	c[2][i] = ptr[((x1 + 0) + (y1 + 1) * width) * components + i];
+	c[3][i] = ptr[((x1 + 1) + (y1 + 1) * width) * components + i];
+    }
 
-    c1[0] = ptr[(x1 + 1) * 3 + (y1 + 0) * 3 * width + 0];
-    c1[1] = ptr[(x1 + 1) * 3 + (y1 + 0) * 3 * width + 1];
-    c1[2] = ptr[(x1 + 1) * 3 + (y1 + 0) * 3 * width + 2];
-
-    c2[0] = ptr[(x1 + 0) * 3 + (y1 + 1) * 3 * width + 0];
-    c2[1] = ptr[(x1 + 0) * 3 + (y1 + 1) * 3 * width + 1];
-    c2[2] = ptr[(x1 + 0) * 3 + (y1 + 1) * 3 * width + 2];
-
-    c3[0] = ptr[(x1 + 1) * 3 + (y1 + 1) * 3 * width + 0];
-    c3[1] = ptr[(x1 + 1) * 3 + (y1 + 1) * 3 * width + 1];
-    c3[2] = ptr[(x1 + 1) * 3 + (y1 + 1) * 3 * width + 2];
-
-    *r = (int)(dx * dy * (c0[0] - c1[0] - c2[0] + c3[0]) + dx * (c1[0] - c0[0]) + dy * (c2[0] - c0[0]) + c0[0]);
-    *g = (int)(dx * dy * (c0[1] - c1[1] - c2[1] + c3[1]) + dx * (c1[1] - c0[1]) + dy * (c2[1] - c0[1]) + c0[1]);
-    *b = (int)(dx * dy * (c0[2] - c1[2] - c2[2] + c3[2]) + dx * (c1[2] - c0[2]) + dy * (c2[2] - c0[2]) + c0[2]);
+    *r = (int)(dx * dy * (c[0][0] - c[1][0] - c[2][0] + c[3][0]) + dx * (c[1][0] - c[0][0]) + dy * (c[2][0] - c[0][0]) + c[0][0]);
+    if (components > 1) {
+	*g = (int)(dx * dy * (c[0][1] - c[1][1] - c[2][1] + c[3][1]) + dx * (c[1][1] - c[0][1]) + dy * (c[2][1] - c[0][1]) + c[0][1]);
+	*b = (int)(dx * dy * (c[0][2] - c[1][2] - c[2][2] + c[3][2]) + dx * (c[1][2] - c[0][2]) + dy * (c[2][2] - c[0][2]) + c[0][2]);
+    }
 }
 
 static inline double
@@ -318,7 +303,7 @@ saturate(int n, int min, int max)
 }
 
 static void
-get_point_bicubic(unsigned char *ptr, long width, long height, double dx, double dy, int *pr, int *pg, int *pb)
+get_point_bicubic(unsigned char *ptr, long width, long height, int components, double dx, double dy, int *pr, int *pg, int *pb)
 {
     long x[4], y[4];
     long wx[4], wy[4], wt;
@@ -351,10 +336,12 @@ get_point_bicubic(unsigned char *ptr, long width, long height, double dx, double
 	    for (i = 0; i < 4; ++i) {
 		if (x[i] >= 0 && x[i] < width) {
 		    long w = wx[i] * wy[j];
-		    int pos = x[i] * 3 + y[j] * 3 * width;
+		    int pos = (x[i] + y[j] * width) * components;
 		    r += ptr[pos + 0] * w;
-		    g += ptr[pos + 1] * w;
-		    b += ptr[pos + 2] * w;
+		    if (components > 1) {
+			g += ptr[pos + 1] * w;
+			b += ptr[pos + 2] * w;
+		    }
 		    wt += w;
 		}
 	    }
@@ -362,11 +349,13 @@ get_point_bicubic(unsigned char *ptr, long width, long height, double dx, double
     }
 
     *pr = saturate((int)(r / wt), 0, 255);
-    *pg = saturate((int)(g / wt), 0, 255);
-    *pb = saturate((int)(b / wt), 0, 255);
+    if (components > 1) {
+	*pg = saturate((int)(g / wt), 0, 255);
+	*pb = saturate((int)(b / wt), 0, 255);
+    }
 }
 
-typedef void (* get_point_t)(unsigned char *, long, long, double, double, int *, int *, int *);
+typedef void (* get_point_t)(unsigned char *, long, long, int, double, double, int *, int *, int *);
 
 static VALUE
 im_resize(get_point_t get_point, VALUE self, VALUE dwidth, VALUE dheight)
@@ -380,23 +369,27 @@ im_resize(get_point_t get_point, VALUE self, VALUE dwidth, VALUE dheight)
     VALUE src;
     VALUE dest;
     VALUE jpeg;
+    int components;
 
     dw = NUM2LONG(dwidth);
     dh = NUM2LONG(dheight);
     width = NUM2LONG(rb_iv_get(self, "width"));
     height = NUM2LONG(rb_iv_get(self, "height"));
     src = rb_iv_get(self, "raw_data");
+    components = RTEST(rb_iv_get(self, "gray_p")) ? 1 : 3;
     dest = rb_str_new(NULL, 0);
-    rb_str_resize(dest, dw * dh * 3);
+    rb_str_resize(dest, dw * dh * components);
     bx = (double)width / dw;
     by = (double)height / dh;
     for (y1 = 0, y2 = 0.0; y1 < dh; y1++) {
 	for (x1 = 0, x2 = 0.0; x1 < dw; x1++) {
 	    int r, g, b;
-	    get_point(RSTRING_PTR(src), width, height, x2, y2, &r, &g, &b);
-	    RSTRING_PTR(dest)[x1 * 3 + y1 * dw * 3 + 0] = r;
-	    RSTRING_PTR(dest)[x1 * 3 + y1 * dw * 3 + 1] = g;
-	    RSTRING_PTR(dest)[x1 * 3 + y1 * dw * 3 + 2] = b;
+	    get_point(RSTRING_PTR(src), width, height, components, x2, y2, &r, &g, &b);
+	    RSTRING_PTR(dest)[(x1 + y1 * dw) * components + 0] = r;
+	    if (components > 1) {
+		RSTRING_PTR(dest)[(x1 + y1 * dw) * components + 1] = g;
+		RSTRING_PTR(dest)[(x1 + y1 * dw) * components + 2] = b;
+	    }
 	    x2 += bx;
 	}
 	y2 += by;
@@ -433,24 +426,25 @@ im_contrast(VALUE self)
     VALUE src;
     VALUE dest;
     long x, y;
-    unsigned char min, max, hist[256], median;
+    unsigned char min, max, median;
+    int components;
     int low, high;
     int i;
-    long sum, half;
+    long sum, half, hist[256];
 
     width = NUM2LONG(rb_iv_get(self, "width"));
     height = NUM2LONG(rb_iv_get(self, "height"));
     src = rb_iv_get(self, "raw_data");
+    components = RTEST(rb_iv_get(self, "gray_p")) ? 1 : 3;
     dest = rb_str_new(NULL, 0);
-    rb_str_resize(dest, width * height * 3);
+    rb_str_resize(dest, width * height * components);
 
     memset(hist, 0, sizeof(hist));
     min = 255; max = 0;
     for (y = 0; y < height; ++y) {
 	for (x = 0; x < width; ++x) {
-	    unsigned char *p = &RSTRING_PTR(src)[x * 3 + y * width * 3];
-	    unsigned char *q = &RSTRING_PTR(dest)[x * 3 + y * width * 3];
-	    int gray = grayscale(p[0], p[1], p[2]);
+	    unsigned char *p = &RSTRING_PTR(src)[(x + y * width) * components];
+	    unsigned char gray = components > 1 ? grayscale(p[0], p[1], p[2]) : *p;
 	    min = min(gray, min);
 	    max = max(gray, max);
 	    hist[gray]++;
@@ -458,6 +452,7 @@ im_contrast(VALUE self)
     }
 
     half = width * height / 2;
+    median = 128;
     sum = 0;
     for (i = 0; i < sizeof(hist); ++i) {
 	sum += hist[i];
@@ -469,15 +464,21 @@ im_contrast(VALUE self)
 
     low = median - min;
     high = max - median;
+    if (low && high) {
 
-    for (y = 0; y < height; ++y) {
-	for (x = 0; x < width; ++x) {
-	    unsigned char *p = &RSTRING_PTR(src)[x * 3 + y * width * 3];
-	    unsigned char *q = &RSTRING_PTR(dest)[x * 3 + y * width * 3];
-	    q[0] = p[0] < median ? (p[0] - min) * 127 / low : (p[0] - median) * 127 / high + 128;
-	    q[1] = p[1] < median ? (p[1] - min) * 127 / low : (p[1] - median) * 127 / high + 128;
-	    q[2] = p[2] < median ? (p[2] - min) * 127 / low : (p[2] - median) * 127 / high + 128;
+	for (y = 0; y < height; ++y) {
+	    for (x = 0; x < width; ++x) {
+		unsigned char *p = &RSTRING_PTR(src)[(x + y * width) * components];
+		unsigned char *q = &RSTRING_PTR(dest)[(x + y * width) * components];
+		int i;
+		for (i = 0; i < components; ++i) {
+		    q[i] = p[i] < median ? (p[i] - min) * 127 / low : (p[i] - median) * 127 / high + 128;
+		}
+	    }
 	}
+    }
+    else {
+	memcpy(RSTRING_PTR(dest), RSTRING_PTR(src), width * height * components);
     }
 
     jpeg = rb_class_new_instance(0, 0, cImage);
@@ -486,6 +487,44 @@ im_contrast(VALUE self)
     rb_iv_set(jpeg, "height", LONG2NUM(height));
     rb_iv_set(jpeg, "quality", INT2FIX(100));
     rb_iv_set(jpeg, "gray_p", rb_iv_get(self, "gray_p"));
+
+    return jpeg;
+}
+
+static VALUE
+im_grayscale(VALUE self)
+{
+    VALUE jpeg;
+    long width;
+    long height;
+    VALUE src;
+    VALUE dest;
+    long x, y;
+
+    width = NUM2LONG(rb_iv_get(self, "width"));
+    height = NUM2LONG(rb_iv_get(self, "height"));
+    src = rb_iv_get(self, "raw_data");
+    dest = rb_str_new(NULL, 0);
+    rb_str_resize(dest, width * height);
+    if (RTEST(rb_iv_get(self, "gray_p"))) {
+	memcpy(RSTRING_PTR(dest), RSTRING_PTR(src), width * height);
+    }
+    else {
+	unsigned char *q = RSTRING_PTR(dest);
+	for (y = 0; y < height; ++y) {
+	    for (x = 0; x < width; ++x, ++q) {
+		unsigned char *p = &RSTRING_PTR(src)[x * 3 + y * width * 3];
+		*q = grayscale(p[0], p[1], p[2]);
+	    }
+	}
+    }
+
+    jpeg = rb_class_new_instance(0, 0, cImage);
+    rb_iv_set(jpeg, "raw_data", dest);
+    rb_iv_set(jpeg, "width", LONG2NUM(width));
+    rb_iv_set(jpeg, "height", LONG2NUM(height));
+    rb_iv_set(jpeg, "quality", INT2FIX(100));
+    rb_iv_set(jpeg, "gray_p", Qtrue);
 
     return jpeg;
 }
@@ -873,13 +912,14 @@ Init_jpeg(void)
     mJpeg = rb_define_module("JPEG");
     rb_define_const(mJpeg, "VERSION", rb_str_new2(MY_VERSION));
     rb_define_singleton_method(mJpeg, "read", jp_s_read, 1);
-    rb_define_singleton_method(mJpeg, "write", jp_s_write, -1);
+    rb_define_singleton_method(mJpeg, "write", jp_s_write, 2);
 
     cImage = rb_define_class_under(mJpeg, "Image", rb_cObject);
     rb_define_method(cImage, "initialize", im_initialize, 0);
     rb_define_method(cImage, "bilinear", im_bilinear, 2);
     rb_define_method(cImage, "bicubic", im_bicubic, 2);
     rb_define_method(cImage, "auto_contrast", im_contrast, 0);
+    rb_define_method(cImage, "grayscale", im_grayscale, 0);
     rb_define_method(cImage, "gray?", im_gray_p, 0);
     register_accessor(cImage, im, raw_data);
     register_accessor(cImage, im, width);

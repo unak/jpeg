@@ -108,6 +108,7 @@ im_initialize(VALUE self)
     rb_iv_set(self, "width", INT2FIX(0));
     rb_iv_set(self, "height", INT2FIX(0));
     rb_iv_set(self, "quality", INT2FIX(0));
+    rb_iv_set(self, "gray_p", Qfalse);
 
     return self;
 }
@@ -150,6 +151,7 @@ jp_s_read(VALUE klass, VALUE src)
     rb_iv_set(obj, "width", LONG2NUM(dinfo.image_width));
     rb_iv_set(obj, "height", LONG2NUM(dinfo.image_height));
     rb_iv_set(obj, "quality", INT2FIX(100));	/* always 100 */
+    rb_iv_set(obj, "gray_p", dinfo.out_color_space == JCS_GRAYSCALE ? Qtrue : Qfalse);
 
     dinfo.output_components = 3;
     dinfo.out_color_space = JCS_RGB;
@@ -319,8 +321,8 @@ static void
 get_point_bicubic(unsigned char *ptr, long width, long height, double dx, double dy, int *pr, int *pg, int *pb)
 {
     long x[4], y[4];
-    double wx[4], wy[4], wt;
-    double r, g, b;
+    long wx[4], wy[4], wt;
+    long r, g, b;
     int i, j, k;
 
     x[1] = (long)dx;
@@ -333,22 +335,22 @@ get_point_bicubic(unsigned char *ptr, long width, long height, double dx, double
     y[2] = y[1] + 1;
     y[3] = y[2] + 1;
 
-    wx[0] = bicubic_weight(dx - x[0]);
-    wx[1] = bicubic_weight(dx - x[1]);
-    wx[2] = bicubic_weight(x[2] - dx);
-    wx[3] = bicubic_weight(x[3] - dx);
-    wy[0] = bicubic_weight(dy - y[0]);
-    wy[1] = bicubic_weight(dy - y[1]);
-    wy[2] = bicubic_weight(y[2] - dy);
-    wy[3] = bicubic_weight(y[3] - dy);
+    wx[0] = (long)(bicubic_weight(dx - x[0]) * 1024);
+    wx[1] = (long)(bicubic_weight(dx - x[1]) * 1024);
+    wx[2] = (long)(bicubic_weight(x[2] - dx) * 1024);
+    wx[3] = (long)(bicubic_weight(x[3] - dx) * 1024);
+    wy[0] = (long)(bicubic_weight(dy - y[0]) * 1024);
+    wy[1] = (long)(bicubic_weight(dy - y[1]) * 1024);
+    wy[2] = (long)(bicubic_weight(y[2] - dy) * 1024);
+    wy[3] = (long)(bicubic_weight(y[3] - dy) * 1024);
 
-    r = g = b = 0.0;
-    wt = 0.0;
+    r = g = b = 0;
+    wt = 0;
     for (j = 0; j < 4; ++j) {
 	if (y[j] >= 0 && y[j] < height) {
 	    for (i = 0; i < 4; ++i) {
 		if (x[i] >= 0 && x[i] < width) {
-		    double w = wx[i] * wy[j];
+		    long w = wx[i] * wy[j];
 		    int pos = x[i] * 3 + y[j] * 3 * width;
 		    r += ptr[pos + 0] * w;
 		    g += ptr[pos + 1] * w;
@@ -405,6 +407,7 @@ im_resize(get_point_t get_point, VALUE self, VALUE dwidth, VALUE dheight)
     rb_iv_set(jpeg, "width", LONG2NUM(dw));
     rb_iv_set(jpeg, "height", LONG2NUM(dh));
     rb_iv_set(jpeg, "quality", INT2FIX(100));
+    rb_iv_set(jpeg, "gray_p", rb_iv_get(self, "gray_p"));
 
     return jpeg;
 }
@@ -419,6 +422,78 @@ static VALUE
 im_bicubic(VALUE self, VALUE dwidth, VALUE dheight)
 {
     return im_resize(get_point_bicubic, self, dwidth, dheight);
+}
+
+static VALUE
+im_contrast(VALUE self)
+{
+    VALUE jpeg;
+    long width;
+    long height;
+    VALUE src;
+    VALUE dest;
+    long x, y;
+    unsigned char min, max, hist[256], median;
+    int low, high;
+    int i;
+    long sum, half;
+
+    width = NUM2LONG(rb_iv_get(self, "width"));
+    height = NUM2LONG(rb_iv_get(self, "height"));
+    src = rb_iv_get(self, "raw_data");
+    dest = rb_str_new(NULL, 0);
+    rb_str_resize(dest, width * height * 3);
+
+    memset(hist, 0, sizeof(hist));
+    min = 255; max = 0;
+    for (y = 0; y < height; ++y) {
+	for (x = 0; x < width; ++x) {
+	    unsigned char *p = &RSTRING_PTR(src)[x * 3 + y * width * 3];
+	    unsigned char *q = &RSTRING_PTR(dest)[x * 3 + y * width * 3];
+	    int gray = grayscale(p[0], p[1], p[2]);
+	    min = min(gray, min);
+	    max = max(gray, max);
+	    hist[gray]++;
+	}
+    }
+
+    half = width * height / 2;
+    sum = 0;
+    for (i = 0; i < sizeof(hist); ++i) {
+	sum += hist[i];
+	if (sum >= half) {
+	    median = i;
+	    break;
+	}
+    }
+
+    low = median - min;
+    high = max - median;
+
+    for (y = 0; y < height; ++y) {
+	for (x = 0; x < width; ++x) {
+	    unsigned char *p = &RSTRING_PTR(src)[x * 3 + y * width * 3];
+	    unsigned char *q = &RSTRING_PTR(dest)[x * 3 + y * width * 3];
+	    q[0] = p[0] < median ? (p[0] - min) * 127 / low : (p[0] - median) * 127 / high + 128;
+	    q[1] = p[1] < median ? (p[1] - min) * 127 / low : (p[1] - median) * 127 / high + 128;
+	    q[2] = p[2] < median ? (p[2] - min) * 127 / low : (p[2] - median) * 127 / high + 128;
+	}
+    }
+
+    jpeg = rb_class_new_instance(0, 0, cImage);
+    rb_iv_set(jpeg, "raw_data", dest);
+    rb_iv_set(jpeg, "width", LONG2NUM(width));
+    rb_iv_set(jpeg, "height", LONG2NUM(height));
+    rb_iv_set(jpeg, "quality", INT2FIX(100));
+    rb_iv_set(jpeg, "gray_p", rb_iv_get(self, "gray_p"));
+
+    return jpeg;
+}
+
+static VALUE
+im_gray_p(VALUE self)
+{
+    return rb_iv_get(self, "gray_p");
 }
 
 define_accessor(cImage, im, raw_data);
@@ -804,6 +879,8 @@ Init_jpeg(void)
     rb_define_method(cImage, "initialize", im_initialize, 0);
     rb_define_method(cImage, "bilinear", im_bilinear, 2);
     rb_define_method(cImage, "bicubic", im_bicubic, 2);
+    rb_define_method(cImage, "auto_contrast", im_contrast, 0);
+    rb_define_method(cImage, "gray?", im_gray_p, 0);
     register_accessor(cImage, im, raw_data);
     register_accessor(cImage, im, width);
     register_accessor(cImage, im, height);

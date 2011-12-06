@@ -100,17 +100,28 @@ Set the raw RGB data of the image.
 str must be a String object. It must be larger than or equal to the required
 size. You can calculate that the size is width * 3 * height.
 
---- JPEG::bilinear(width, height)
-Create and returns a new JPEG::Image object by converting the size of the image.
+--- JPEG::Image#gray?
+Returns the source image was grayscale or not.
+
+The returned value is a true value or false value.
+
+--- JPEG::Image#bilinear(width, height)
+Creates and returns a new JPEG::Image object by converting the size of the
+image.
 It converts the image by using bilinear operation.
 
 width and height must be Integer objects. They must be more than 0.
 
---- JPEG::bicubic(width, height)
-Create and returns a new JPEG::Image object by converting the size of the image.
+--- JPEG::Image#bicubic(width, height)
+Creates and returns a new JPEG::Image object by converting the size of the
+image.
 It converts the image by using bicubic operation.
 
 width and height must be Integer objects. They must be more than 0.
+
+--- JPEG::Image#auto_contrast()
+Creates and returns a new JPEG::Image object by adjusting the contrast of the
+image.
 
 === class JPEG::Reader
 Class for reading JPEG file.

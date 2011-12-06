@@ -7,7 +7,7 @@ src = nil
 File.open(File.join(dir, "test.jpg"), "rb") do |f|
   src = JPEG.read(f)
 end
-puts "source   : %d x %d, %d bytes" % [src.width, src.height, src.raw_data.size]
+puts "source   : %d x %d, %d bytes (%sgray)" % [src.width, src.height, src.raw_data.size, src.gray?? "" : "not "]
 
 dest = src.bilinear(src.width / 3, src.height / 3)
 puts "bilinear : %d x %d, %d bytes (test2.jpg)" % [dest.width, dest.height, dest.raw_data.size]
@@ -38,20 +38,27 @@ File.open("test3.jpg", "wb") do |f|
 end
 File.open("test4.jpg", "wb") do |f|
   JPEG.write(dest, f, true)
-  puts "test4.jpg: grayscale image"
+  puts "test4.jpg: creating grayscale image"
+end
+
+dest = src.auto_contrast.bicubic(src.width / 3, src.height / 3)
+File.open("test5.jpg", "wb") do |f|
+  JPEG.write(dest, f)
+  puts "test5.jpg: auto contrasted image"
 end
 
 File.open("test4.jpg", "rb") do |f|
   src = JPEG.read(f)
+  puts "         : %d x %d, %d bytes (%sgray)" % [src.width, src.height, src.raw_data.size, src.gray?? "" : "not "]
 end
-File.open("test5.jpg", "wb") do |f|
+File.open("test6.jpg", "wb") do |f|
   JPEG.write(src, f)
-  puts "test5.jpg: fullcolor but grayed image"
+  puts "test6.jpg: fullcolor but grayed image"
 end
 
-File.open("test6.jpg", "wb") do |f|
+File.open("test7.jpg", "wb") do |f|
   JPEG::Writer.open(f, 320, 240, 50) do |writer|
-    puts "test6.jpg: %d x %d (%d)" % [writer.width, writer.height, writer.quality]
+    puts "test7.jpg: %d x %d (%d)" % [writer.width, writer.height, writer.quality]
     r = 0
     g = 0
     b = 0
@@ -77,9 +84,9 @@ File.open("test6.jpg", "wb") do |f|
   end
 end
 
-File.open("test7.jpg", "wb") do |f|
+File.open("test8.jpg", "wb") do |f|
   JPEG::Writer.open(f, 320, 240, 50, true) do |writer|
-    puts "test7.jpg: %d x %d (%d)" % [writer.width, writer.height, writer.quality]
+    puts "test8.jpg: %d x %d (%d)" % [writer.width, writer.height, writer.quality]
     scale = 0
     writer.write_each_line do
       line = ""
@@ -89,6 +96,32 @@ File.open("test7.jpg", "wb") do |f|
         scale = 0 if scale > 255
       end
       line
+    end
+  end
+end
+
+
+puts "resize benchmark"
+require "benchmark"
+
+src = nil
+File.open(File.join(dir, "test.jpg"), "rb") do |f|
+  src = JPEG.read(f)
+end
+width = src.width / 3
+height = src.height / 3
+
+TRY = 20
+Benchmark.bm do |bm|
+  bm.report("bilinear:") do
+    TRY.times do
+      src.bilinear(width, height)
+    end
+  end
+
+  bm.report("bicubic :") do
+    TRY.times do
+      src.bicubic(width, height)
     end
   end
 end

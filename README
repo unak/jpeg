@@ -106,7 +106,7 @@ C is 3 if the image is colored, or 1 if the image is grayscaled.
 --- JPEG::Image#gray?
 Returns the image is grayscaled or not.
 
-The returned value is a true value or false value.
+The returned value is a true value or a false value.
 
 --- JPEG::Image#bilinear(width, height)
 Creates and returns a new JPEG::Image object by converting the size of the
@@ -126,14 +126,23 @@ width and height must be Integer objects. They must be more than 0.
 Creates and returns a new JPEG::Image object which is adfusted the level of
 the image contrast automatically.
 
+--- JPEG::Image#level(low, high, adjust = false)
+Creates and returns a new JPEG::Image object which is cut the level of the
+image contrast.
+
 low must be an Integer object. It must be more than 0 and less than or 
 equal to 100.
 high must be an Integer object. It must be more than 0, less than or equal to
 100, and more than low.
+adjust must be a true value or a false value. If true, the level of contrast
+will be adjusted automatically after cutting.
 
---- JPEG::Image#level(low = 0, high = 100)
-Creates and returns a new JPEG::Image object which is adjusted the level of
-the image contrast.
+--- JPEG::Image#clip(x1 = nil, y1 = nil, x2 = nil, y2 = nil)
+Creates and returns a new JPEG::Image object which is clipped from self.
+If there is no argument, returns an image clipped automatically.
+Otherwise, requires all 4 arguments and clips (x1, y1) - (x2, y2).
+
+x1, y1, x2, and y2 must be an Integer object or nil.
 
 --- JPEG::Image#grayscale()
 Creates and returns a new JPEG::Image object which is grayscaled from self.

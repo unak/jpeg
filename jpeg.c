@@ -531,8 +531,7 @@ im_grayscale(VALUE self)
 static VALUE
 im_level(int argc, VALUE *argv, VALUE self)
 {
-    VALUE l = INT2FIX(0);
-    VALUE h = INT2FIX(100);
+    VALUE l, h, adj = Qfalse;
     int low, high, d;
     VALUE jpeg;
     long width, height;
@@ -540,9 +539,9 @@ im_level(int argc, VALUE *argv, VALUE self)
     long x, y;
     int components;
 
-    rb_scan_args(argc, argv, "02", &l, &h);
-    low = FIX2INT(l);
-    high = FIX2INT(h);
+    rb_scan_args(argc, argv, "21", &l, &h, &adj);
+    low = NUM2LONG(l);
+    high = NUM2LONG(h);
     if (low < 0 || low > 100 || high < 0 || high > 100) {
 	rb_raise(rb_eArgError, "level must be between 1 to 100");
     }
@@ -566,7 +565,7 @@ im_level(int argc, VALUE *argv, VALUE self)
 	    unsigned char *q = &RSTRING_PTR(dest)[(x + y * width) * components];
 	    int i;
 	    for (i = 0; i < components; ++i) {
-		q[i] = p[i] < low ? 0 : p[i] >= high ? 255 : (p[i] - low) * d / 256;
+		q[i] = p[i] < low ? 0 : p[i] >= high ? 255 : RTEST(adj) ? (p[i] - low) * d / 256 : p[i];
 	    }
 	}
     }
@@ -575,6 +574,99 @@ im_level(int argc, VALUE *argv, VALUE self)
     rb_iv_set(jpeg, "raw_data", dest);
     rb_iv_set(jpeg, "width", LONG2NUM(width));
     rb_iv_set(jpeg, "height", LONG2NUM(height));
+    rb_iv_set(jpeg, "quality", INT2FIX(100));
+    rb_iv_set(jpeg, "gray_p", rb_iv_get(self, "gray_p"));
+
+    return jpeg;
+}
+
+static VALUE
+im_clip(int argc, VALUE *argv, VALUE self)
+{
+    long x1, y1, x2, y2;
+    long width, height;
+    long dwidth, dheight;
+    long x, y;
+    long i;
+    int components;
+    VALUE src, dest;
+    VALUE jpeg;
+
+    if (argc != 0 && argc != 4) {
+	rb_raise(rb_eArgError,
+		 "wrong number of arguments(%d for 0 or 4)", argc);
+    }
+
+    src = rb_iv_get(self, "raw_data");
+    components = RTEST(rb_iv_get(self, "gray_p")) ? 1 : 3;
+
+    if (argc == 0) {
+	unsigned char base[3], *p;
+
+	width = NUM2LONG(rb_iv_get(self, "width"));
+	height = NUM2LONG(rb_iv_get(self, "height"));
+
+	memcpy(base, RSTRING_PTR(src), components);
+
+	x1 = width - 1;
+	y1 = height - 1;
+	for (y = 0; y < height; ++y) {
+	    for (x = 0; x <= x1; ++x) {
+		p = &RSTRING_PTR(src)[(x + y * width) * components];
+		for (i = 0; i < components; ++i) {
+		    if (p[i] != base[i]) {
+			x1 = x;
+			if (y < y1) y1 = y;
+			break;
+		    }
+		}
+	    }
+	}
+
+	x2 = x1;
+	y2 = y1;
+	for (y = height - 1; y >= 0; --y) {
+	    for (x = width - 1; x >= x2; --x) {
+		p = &RSTRING_PTR(src)[(x + y * width) * components];
+		for (i = 0; i < components; ++i) {
+		    if (p[i] != base[i]) {
+			x2 = x;
+			if (y > y2) y2 = y;
+			break;
+		    }
+		}
+	    }
+	}
+
+	if (x1 == x2 || y1 == y2) {
+	    return Qnil;
+	}
+    }
+    else {
+	x1 = NUM2LONG(argv[0]);
+	y1 = NUM2LONG(argv[1]);
+	x2 = NUM2LONG(argv[2]);
+	y2 = NUM2LONG(argv[3]);
+	if (x1 >= x2 || y1 >= y2) {
+	    rb_raise(rb_eArgError, "wrong combination of arguments");
+	}
+    }
+
+    dwidth = x2 - x1 + 1;
+    dheight = y2 - y1 + 1;
+    dest = rb_str_new(NULL, 0);
+    rb_str_resize(dest, dwidth * dheight * components);
+
+    for (y = y1; y <= y2; ++y) {
+	unsigned char *p = &RSTRING_PTR(src)[(x1 + y * width) * components];
+	unsigned char *q = &RSTRING_PTR(dest)[(y - y1) * dwidth * components];
+	memcpy(q, p, dwidth * components);
+    }
+
+    jpeg = rb_class_new_instance(0, 0, cImage);
+    rb_iv_set(jpeg, "raw_data", dest);
+    rb_iv_set(jpeg, "width", LONG2NUM(dwidth));
+    rb_iv_set(jpeg, "height", LONG2NUM(dheight));
     rb_iv_set(jpeg, "quality", INT2FIX(100));
     rb_iv_set(jpeg, "gray_p", rb_iv_get(self, "gray_p"));
 
@@ -973,6 +1065,7 @@ Init_jpeg(void)
     rb_define_method(cImage, "auto_contrast", im_contrast, 0);
     rb_define_method(cImage, "grayscale", im_grayscale, 0);
     rb_define_method(cImage, "level", im_level, -1);
+    rb_define_method(cImage, "clip", im_clip, -1);
     rb_define_method(cImage, "gray?", im_gray_p, 0);
     register_accessor(cImage, im, raw_data);
     register_accessor(cImage, im, width);

@@ -99,7 +99,7 @@ end
 
 open("test9.jpg", "wb") do |f|
   JPEG::Writer.open(f, 320, 240, 50, true) do |writer|
-    puts "test8.jpg: %d x %d (%d)" % [writer.width, writer.height, writer.quality]
+    puts "test9.jpg: %d x %d (%d)" % [writer.width, writer.height, writer.quality]
     scale = 0
     writer.write_each_line do
       line = ""

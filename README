@@ -84,24 +84,27 @@ equal to 100.
 
 --- JPEG::Image#raw_data
 Returns the raw RGB data of the image.
-Even if the object is created from grayscale image, the data image is
-RGB data (automatically converted).
 
 The returned value is a String object.
-1 pixel is 3 bytes -- 1st byte means red, 2nd byte means green, and 3rd byte
-means blue.
+If the image is colored, 1 pixel is 3 bytes -- 1st byte means red, 2nd byte
+means green, and 3rd byte means blue.
+If the image is grayscaled, 1 pixel is 1 byte.
+
 The raw data starts the pixel of left-top corner.
-And next 3 bytes is the right pixel of it, and so on.
+And next 3 bytes (color) or 1 byte (grayscale) is the right pixel of it, and
+so on.
 After first line ended, the most left pixel of next line starts.
 
 --- JPEG::Image#raw_data=(str)
 Set the raw RGB data of the image.
 
 str must be a String object. It must be larger than or equal to the required
-size. You can calculate that the size is width * 3 * height.
+size.
+You can calculate that the size is width * C * height.
+C is 3 if the image is colored, or 1 if the image is grayscaled.
 
 --- JPEG::Image#gray?
-Returns the source image was grayscale or not.
+Returns the image is grayscaled or not.
 
 The returned value is a true value or false value.
 
@@ -120,8 +123,20 @@ It converts the image by using bicubic operation.
 width and height must be Integer objects. They must be more than 0.
 
 --- JPEG::Image#auto_contrast()
-Creates and returns a new JPEG::Image object by adjusting the contrast of the
-image.
+Creates and returns a new JPEG::Image object which is adfusted the level of
+the image contrast automatically.
+
+low must be an Integer object. It must be more than 0 and less than or 
+equal to 100.
+high must be an Integer object. It must be more than 0, less than or equal to
+100, and more than low.
+
+--- JPEG::Image#level(low = 0, high = 100)
+Creates and returns a new JPEG::Image object which is adjusted the level of
+the image contrast.
+
+--- JPEG::Image#grayscale()
+Creates and returns a new JPEG::Image object which is grayscaled from self.
 
 === class JPEG::Reader
 Class for reading JPEG file.
@@ -151,8 +166,9 @@ You can never use this object to read data.
 --- JPEG::Reader#read_each_line {|line| ... }
 Reads the JPEG file and passes the raw RGB data of each lines to the block.
 The passed line will be a String object. 
-1 pixel is 3 bytes -- 1st byte means red, 2nd byte means green, and 3rd byte
-means blue.
+If the image is colored, 1 pixel is 3 bytes -- 1st byte means red, 2nd byte
+means green, and 3rd byte means blue.
+If the image is grayscaled, 1 pixel is 1 byte.
 
 --- JPEG::Reader#width
 Returns the width of the image.
@@ -203,7 +219,7 @@ You can never use this object to write data.
 Write the return value of the block as the raw RGB data of each lines to
 the JPEG file.
 The return value must be a String object. 
-If self is created for grayscale image, 1 pixel is 1 byte -- grayscale.
+If self is created for grayscale image, 1 pixel is 1 byte.
 Otherwise, 1 pixel is 3 bytes -- 1st byte means red, 2nd byte means green,
 and 3rd byte means blue.
 

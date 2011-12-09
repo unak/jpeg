@@ -465,7 +465,6 @@ im_contrast(VALUE self)
     low = median - min;
     high = max - median;
     if (low && high) {
-
 	for (y = 0; y < height; ++y) {
 	    for (x = 0; x < width; ++x) {
 		unsigned char *p = &RSTRING_PTR(src)[(x + y * width) * components];
@@ -525,6 +524,59 @@ im_grayscale(VALUE self)
     rb_iv_set(jpeg, "height", LONG2NUM(height));
     rb_iv_set(jpeg, "quality", INT2FIX(100));
     rb_iv_set(jpeg, "gray_p", Qtrue);
+
+    return jpeg;
+}
+
+static VALUE
+im_level(int argc, VALUE *argv, VALUE self)
+{
+    VALUE l = INT2FIX(0);
+    VALUE h = INT2FIX(100);
+    int low, high, d;
+    VALUE jpeg;
+    long width, height;
+    VALUE src, dest;
+    long x, y;
+    int components;
+
+    rb_scan_args(argc, argv, "02", &l, &h);
+    low = FIX2INT(l);
+    high = FIX2INT(h);
+    if (low < 0 || low > 100 || high < 0 || high > 100) {
+	rb_raise(rb_eArgError, "level must be between 1 to 100");
+    }
+    if (low >= high) {
+	rb_raise(rb_eArgError, "low must be less than high");
+    }
+    low = low * 256 / 100;
+    high = high * 256 / 100;
+    d = high - low;
+
+    width = NUM2LONG(rb_iv_get(self, "width"));
+    height = NUM2LONG(rb_iv_get(self, "height"));
+    src = rb_iv_get(self, "raw_data");
+    components = RTEST(rb_iv_get(self, "gray_p")) ? 1 : 3;
+    dest = rb_str_new(NULL, 0);
+    rb_str_resize(dest, width * height * components);
+
+    for (y = 0; y < height; ++y) {
+	for (x = 0; x < width; ++x) {
+	    unsigned char *p = &RSTRING_PTR(src)[(x + y * width) * components];
+	    unsigned char *q = &RSTRING_PTR(dest)[(x + y * width) * components];
+	    int i;
+	    for (i = 0; i < components; ++i) {
+		q[i] = p[i] < low ? 0 : p[i] >= high ? 255 : (p[i] - low) * d / 256;
+	    }
+	}
+    }
+
+    jpeg = rb_class_new_instance(0, 0, cImage);
+    rb_iv_set(jpeg, "raw_data", dest);
+    rb_iv_set(jpeg, "width", LONG2NUM(width));
+    rb_iv_set(jpeg, "height", LONG2NUM(height));
+    rb_iv_set(jpeg, "quality", INT2FIX(100));
+    rb_iv_set(jpeg, "gray_p", rb_iv_get(self, "gray_p"));
 
     return jpeg;
 }
@@ -920,6 +972,7 @@ Init_jpeg(void)
     rb_define_method(cImage, "bicubic", im_bicubic, 2);
     rb_define_method(cImage, "auto_contrast", im_contrast, 0);
     rb_define_method(cImage, "grayscale", im_grayscale, 0);
+    rb_define_method(cImage, "level", im_level, -1);
     rb_define_method(cImage, "gray?", im_gray_p, 0);
     register_accessor(cImage, im, raw_data);
     register_accessor(cImage, im, width);

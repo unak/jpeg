@@ -4,7 +4,7 @@ dir = File.dirname(__FILE__)
 puts "jpeg.so version = #{JPEG::VERSION}"
 
 src = nil
-File.open(File.join(dir, "test.jpg"), "rb") do |f|
+open(File.join(dir, "test.jpg"), "rb") do |f|
   src = JPEG.read(f)
 end
 puts "source   : %d x %d, %d bytes (%sgray)" % [src.width, src.height, src.raw_data.size, src.gray?? "" : "not "]
@@ -12,11 +12,11 @@ puts "source   : %d x %d, %d bytes (%sgray)" % [src.width, src.height, src.raw_d
 dest = src.bilinear(src.width / 3, src.height / 3)
 puts "bilinear : %d x %d, %d bytes (test2.jpg)" % [dest.width, dest.height, dest.raw_data.size]
 dest.quality = 100
-File.open("test2.jpg", "wb") do |f|
+open("test2.jpg", "wb") do |f|
   JPEG.write(dest, f)
 end
 
-File.open("test2.jpg", "rb") do |f|
+open("test2.jpg", "rb") do |f|
   begin
     JPEG::Reader.open(f) do |reader|
       puts "test2.jpg: %d x %d" % [reader.width, reader.height]
@@ -33,38 +33,45 @@ end
 dest = src.bicubic(src.width / 3, src.height / 3)
 puts "bicubic  : %d x %d, %d bytes (test3.jpg)" % [dest.width, dest.height, dest.raw_data.size]
 dest.quality = 100
-File.open("test3.jpg", "wb") do |f|
+open("test3.jpg", "wb") do |f|
   JPEG.write(dest, f)
 end
 
 dest = src.auto_contrast.bicubic(src.width / 3, src.height / 3)
 dest.quality = 100
-File.open("test4.jpg", "wb") do |f|
+open("test4.jpg", "wb") do |f|
   JPEG.write(dest, f)
   puts "test4.jpg: auto contrasted image"
 end
 
+dest = src.level(10, 90).bicubic(src.width / 3, src.height / 3)
+dest.quality = 100
+open("test5.jpg", "wb") do |f|
+  JPEG.write(dest, f)
+  puts "test5.jpg: contrast level cut image"
+end
+
 gray = src.grayscale.bilinear(src.width / 3, src.height / 3)
 gray.quality = 100
-File.open("test5.jpg", "wb") do |f|
+open("test6.jpg", "wb") do |f|
   JPEG.write(gray, f)
-  puts "test5.jpg: grayscaled image"
+  puts "test6.jpg: grayscaled image"
 end
-File.open("test5.jpg", "rb") do |f|
+open("test6.jpg", "rb") do |f|
   src2 = JPEG.read(f)
   puts "         : %d x %d, %d bytes (%sgray)" % [src2.width, src2.height, src2.raw_data.size, src2.gray?? "" : "not "]
 end
 
 dest = src.grayscale.auto_contrast.bilinear(src.width / 3, src.height / 3)
 dest.quality = 100
-File.open("test6.jpg", "wb") do |f|
+open("test7.jpg", "wb") do |f|
   JPEG.write(dest, f)
-  puts "test6.jpg: grayed and auto contrasted image"
+  puts "test7.jpg: grayed and auto contrasted image"
 end
 
-File.open("test7.jpg", "wb") do |f|
+open("test8.jpg", "wb") do |f|
   JPEG::Writer.open(f, 320, 240, 50) do |writer|
-    puts "test7.jpg: %d x %d (%d)" % [writer.width, writer.height, writer.quality]
+    puts "test8.jpg: %d x %d (%d)" % [writer.width, writer.height, writer.quality]
     r = 0
     g = 0
     b = 0
@@ -90,7 +97,7 @@ File.open("test7.jpg", "wb") do |f|
   end
 end
 
-File.open("test8.jpg", "wb") do |f|
+open("test9.jpg", "wb") do |f|
   JPEG::Writer.open(f, 320, 240, 50, true) do |writer|
     puts "test8.jpg: %d x %d (%d)" % [writer.width, writer.height, writer.quality]
     scale = 0
@@ -107,11 +114,11 @@ File.open("test8.jpg", "wb") do |f|
 end
 
 
-puts "resize benchmark"
+puts "benchmarks"
 require "benchmark"
 
 src = nil
-File.open(File.join(dir, "test.jpg"), "rb") do |f|
+open(File.join(dir, "test.jpg"), "rb") do |f|
   src = JPEG.read(f)
 end
 width = src.width / 3
@@ -120,31 +127,61 @@ gray = src.grayscale
 
 TRY = 20
 Benchmark.bm do |bm|
-  bm.report("bilinear(color):") do
+  bm.report("bilinear(color)      :") do
     TRY.times do
       src.bilinear(width, height)
     end
   end
 
-  bm.report("bicubic (color):") do
+  bm.report("bicubic (color)      :") do
     TRY.times do
       src.bicubic(width, height)
     end
   end
 
-  bm.report("bilinear(gray) :") do
+  bm.report("bilinear (gray)      :") do
     TRY.times do
       gray.bilinear(width, height)
     end
   end
 
-  bm.report("bicubic (gray) :") do
+  bm.report("bicubic (gray)       :") do
     TRY.times do
       gray.bicubic(width, height)
     end
   end
 
-  bm.report("gray special   :") do
+  bm.report("grayscaling          :") do
+    TRY.times do
+      src.grayscale
+    end
+  end
+
+  bm.report("auto contrast (color):") do
+    TRY.times do
+      src.auto_contrast
+    end
+  end
+
+  bm.report("auto contrast (gray) :") do
+    TRY.times do
+      gray.auto_contrast
+    end
+  end
+
+  bm.report("level (color)        :") do
+    TRY.times do
+      src.level(0, 80)
+    end
+  end
+
+  bm.report("level (gray)         :") do
+    TRY.times do
+      gray.level(0, 80)
+    end
+  end
+
+  bm.report("gray special         :") do
     TRY.times do
       gray.auto_contrast.bilinear(width, height)
     end

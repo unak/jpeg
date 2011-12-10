@@ -121,7 +121,6 @@ jp_s_read(VALUE klass, VALUE src)
     FILE *fp;
     long size;
     long offset;
-    char *line;
     long len;
     VALUE obj;
     VALUE raw_data;
@@ -193,8 +192,7 @@ jp_s_write(VALUE klass, VALUE obj, VALUE dest)
     FILE *fp;
     long size;
     long offset;
-    char *line;
-    VALUE raw_data, buffer;
+    VALUE raw_data;
     long width, height;
     int quality;
     JSAMPROW work;
@@ -249,7 +247,7 @@ jp_s_write(VALUE klass, VALUE obj, VALUE dest)
 
     size = width * cinfo.input_components;
     offset = 0;
-    while (cinfo.next_scanline < height) {
+    while (cinfo.next_scanline < (unsigned long)height) {
 	work = (JSAMPROW)&RSTRING_PTR(raw_data)[offset];
 	jpeg_write_scanlines(&cinfo, (JSAMPARRAY)&work , 1);
 	offset += size;
@@ -308,7 +306,7 @@ get_point_bicubic(unsigned char *ptr, long width, long height, int components, d
     long x[4], y[4];
     long wx[4], wy[4], wt;
     long r, g, b;
-    int i, j, k;
+    int i, j;
 
     x[1] = (long)dx;
     x[0] = x[1] - 1;
@@ -384,7 +382,7 @@ im_resize(get_point_t get_point, VALUE self, VALUE dwidth, VALUE dheight)
     for (y1 = 0, y2 = 0.0; y1 < dh; y1++) {
 	for (x1 = 0, x2 = 0.0; x1 < dw; x1++) {
 	    int r, g, b;
-	    get_point(RSTRING_PTR(src), width, height, components, x2, y2, &r, &g, &b);
+	    get_point((unsigned char *)RSTRING_PTR(src), width, height, components, x2, y2, &r, &g, &b);
 	    RSTRING_PTR(dest)[(x1 + y1 * dw) * components + 0] = r;
 	    if (components > 1) {
 		RSTRING_PTR(dest)[(x1 + y1 * dw) * components + 1] = g;
@@ -417,6 +415,13 @@ im_bicubic(VALUE self, VALUE dwidth, VALUE dheight)
     return im_resize(get_point_bicubic, self, dwidth, dheight);
 }
 
+#ifndef min
+#define min(a, b) ((a) < (b) ? (a) : (b))
+#endif
+#ifndef max
+#define max(a, b) ((a) > (b) ? (a) : (b))
+#endif
+
 static VALUE
 im_contrast(VALUE self)
 {
@@ -443,7 +448,7 @@ im_contrast(VALUE self)
     min = 255; max = 0;
     for (y = 0; y < height; ++y) {
 	for (x = 0; x < width; ++x) {
-	    unsigned char *p = &RSTRING_PTR(src)[(x + y * width) * components];
+	    unsigned char *p = (unsigned char *)&RSTRING_PTR(src)[(x + y * width) * components];
 	    unsigned char gray = components > 1 ? grayscale(p[0], p[1], p[2]) : *p;
 	    min = min(gray, min);
 	    max = max(gray, max);
@@ -454,7 +459,7 @@ im_contrast(VALUE self)
     half = width * height / 2;
     median = 128;
     sum = 0;
-    for (i = 0; i < sizeof(hist); ++i) {
+    for (i = 0; i < (long)sizeof(hist); ++i) {
 	sum += hist[i];
 	if (sum >= half) {
 	    median = i;
@@ -467,8 +472,8 @@ im_contrast(VALUE self)
     if (low && high) {
 	for (y = 0; y < height; ++y) {
 	    for (x = 0; x < width; ++x) {
-		unsigned char *p = &RSTRING_PTR(src)[(x + y * width) * components];
-		unsigned char *q = &RSTRING_PTR(dest)[(x + y * width) * components];
+		unsigned char *p = (unsigned char *)&RSTRING_PTR(src)[(x + y * width) * components];
+		unsigned char *q = (unsigned char *)&RSTRING_PTR(dest)[(x + y * width) * components];
 		int i;
 		for (i = 0; i < components; ++i) {
 		    q[i] = p[i] < median ? (p[i] - min) * 127 / low : (p[i] - median) * 127 / high + 128;
@@ -509,10 +514,10 @@ im_grayscale(VALUE self)
 	memcpy(RSTRING_PTR(dest), RSTRING_PTR(src), width * height);
     }
     else {
-	unsigned char *q = RSTRING_PTR(dest);
+	unsigned char *q = (unsigned char *)RSTRING_PTR(dest);
 	for (y = 0; y < height; ++y) {
 	    for (x = 0; x < width; ++x, ++q) {
-		unsigned char *p = &RSTRING_PTR(src)[x * 3 + y * width * 3];
+		unsigned char *p = (unsigned char *)&RSTRING_PTR(src)[x * 3 + y * width * 3];
 		*q = grayscale(p[0], p[1], p[2]);
 	    }
 	}
@@ -561,8 +566,8 @@ im_level(int argc, VALUE *argv, VALUE self)
 
     for (y = 0; y < height; ++y) {
 	for (x = 0; x < width; ++x) {
-	    unsigned char *p = &RSTRING_PTR(src)[(x + y * width) * components];
-	    unsigned char *q = &RSTRING_PTR(dest)[(x + y * width) * components];
+	    unsigned char *p = (unsigned char *)&RSTRING_PTR(src)[(x + y * width) * components];
+	    unsigned char *q = (unsigned char *)&RSTRING_PTR(dest)[(x + y * width) * components];
 	    int i;
 	    for (i = 0; i < components; ++i) {
 		q[i] = p[i] < low ? 0 : p[i] >= high ? 255 : RTEST(adj) ? (p[i] - low) * d / 256 : p[i];
@@ -600,11 +605,11 @@ im_clip(int argc, VALUE *argv, VALUE self)
     src = rb_iv_get(self, "raw_data");
     components = RTEST(rb_iv_get(self, "gray_p")) ? 1 : 3;
 
+    width = NUM2LONG(rb_iv_get(self, "width"));
+    height = NUM2LONG(rb_iv_get(self, "height"));
+
     if (argc == 0) {
 	unsigned char base[3], *p;
-
-	width = NUM2LONG(rb_iv_get(self, "width"));
-	height = NUM2LONG(rb_iv_get(self, "height"));
 
 	memcpy(base, RSTRING_PTR(src), components);
 
@@ -612,7 +617,7 @@ im_clip(int argc, VALUE *argv, VALUE self)
 	y1 = height - 1;
 	for (y = 0; y < height; ++y) {
 	    for (x = 0; x <= x1; ++x) {
-		p = &RSTRING_PTR(src)[(x + y * width) * components];
+		p = (unsigned char *)&RSTRING_PTR(src)[(x + y * width) * components];
 		for (i = 0; i < components; ++i) {
 		    if (p[i] != base[i]) {
 			x1 = x;
@@ -627,7 +632,7 @@ im_clip(int argc, VALUE *argv, VALUE self)
 	y2 = y1;
 	for (y = height - 1; y >= 0; --y) {
 	    for (x = width - 1; x >= x2; --x) {
-		p = &RSTRING_PTR(src)[(x + y * width) * components];
+		p = (unsigned char *)&RSTRING_PTR(src)[(x + y * width) * components];
 		for (i = 0; i < components; ++i) {
 		    if (p[i] != base[i]) {
 			x2 = x;
@@ -658,8 +663,8 @@ im_clip(int argc, VALUE *argv, VALUE self)
     rb_str_resize(dest, dwidth * dheight * components);
 
     for (y = y1; y <= y2; ++y) {
-	unsigned char *p = &RSTRING_PTR(src)[(x1 + y * width) * components];
-	unsigned char *q = &RSTRING_PTR(dest)[(y - y1) * dwidth * components];
+	unsigned char *p = (unsigned char *)&RSTRING_PTR(src)[(x1 + y * width) * components];
+	unsigned char *q = (unsigned char *)&RSTRING_PTR(dest)[(y - y1) * dwidth * components];
 	memcpy(q, p, dwidth * components);
     }
 

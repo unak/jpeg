@@ -675,7 +675,7 @@ im_clip(int argc, VALUE *argv, VALUE self)
     rb_iv_set(jpeg, "quality", INT2FIX(100));
     rb_iv_set(jpeg, "gray_p", rb_iv_get(self, "gray_p"));
 
-    return jpeg;
+    return rb_ary_new3(5, jpeg, LONG2NUM(x1), LONG2NUM(y1), LONG2NUM(x2), LONG2NUM(y2));
 }
 
 static VALUE

@@ -26,8 +26,8 @@
  */
 
 #include <ruby.h>
-#include <rubyio.h>
-#include <st.h>
+#include <ruby/io.h>
+#include <ruby/st.h>
 
 #include <stdio.h>
 
@@ -661,12 +661,15 @@ im_clip(int argc, VALUE *argv, VALUE self)
     dheight = y2 - y1 + 1;
     dest = rb_str_new(NULL, 0);
     rb_str_resize(dest, dwidth * dheight * components);
+    memset(RSTRING_PTR(dest), 0xFF, dwidth * dheight * components);
 
-    for (y = y1; y <= y2; ++y) {
+    for (y = y1; y <= y2 && y < height; ++y) {
 	unsigned char *p = (unsigned char *)&RSTRING_PTR(src)[(x1 + y * width) * components];
 	unsigned char *q = (unsigned char *)&RSTRING_PTR(dest)[(y - y1) * dwidth * components];
 	memcpy(q, p, dwidth * components);
     }
+
+    RB_GC_GUARD(dest);	/* need? */
 
     jpeg = rb_class_new_instance(0, 0, cImage);
     rb_iv_set(jpeg, "raw_data", dest);
